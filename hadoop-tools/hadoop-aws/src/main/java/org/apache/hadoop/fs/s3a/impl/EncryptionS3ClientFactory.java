@@ -197,9 +197,14 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
     if (parameters.getCredentialSet() != null) {
       kmsClientBuilder.credentialsProvider(parameters.getCredentialSet());
     }
-    if (parameters.getRegion() != null) {
+    // check if kms region is configured.
+    if (parameters.getKmsRegion() != null) {
+      kmsClientBuilder.region(Region.of(parameters.getKmsRegion()));
+    } else if (parameters.getRegion() != null) {
+      // fallback to s3 region if kms region is not configured.
       kmsClientBuilder.region(Region.of(parameters.getRegion()));
     } else if (parameters.getEndpoint() != null) {
+      // fallback to s3 endpoint config if both kms region and s3 region is not set.
       String endpointStr = parameters.getEndpoint();
       URI endpoint = getS3Endpoint(endpointStr, cseMaterials.getConf());
       kmsClientBuilder.endpointOverride(endpoint);

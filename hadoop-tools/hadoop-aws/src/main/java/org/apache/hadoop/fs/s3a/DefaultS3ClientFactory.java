@@ -380,7 +380,7 @@ public class DefaultS3ClientFactory extends Configured
    * @param conf config to build the URI from.
    * @return an endpoint uri
    */
-  public static URI getS3Endpoint(String endpoint, final Configuration conf) {
+  protected static URI getS3Endpoint(String endpoint, final Configuration conf) {
 
     boolean secureConnections = conf.getBoolean(SECURE_CONNECTIONS, DEFAULT_SECURE_CONNECTIONS);
 

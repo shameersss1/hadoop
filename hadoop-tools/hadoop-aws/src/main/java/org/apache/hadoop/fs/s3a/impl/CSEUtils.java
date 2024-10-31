@@ -25,20 +25,14 @@ import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.s3a.S3AEncryptionMethods;
-import org.apache.hadoop.fs.s3a.api.RequestFactory;
+import org.apache.hadoop.fs.s3a.S3AStore;
 import org.apache.hadoop.util.Preconditions;
 
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_CSE_CUSTOM_KEYRING_CLASS_NAME;
-import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX;
 import static org.apache.hadoop.fs.s3a.S3AEncryptionMethods.CSE_CUSTOM;
 import static org.apache.hadoop.fs.s3a.S3AEncryptionMethods.CSE_KMS;
-import static org.apache.hadoop.fs.s3a.S3AUtils.formatRange;
 import static org.apache.hadoop.fs.s3a.S3AUtils.getS3EncryptionKey;
 import static org.apache.hadoop.fs.s3a.impl.AWSHeaders.CRYPTO_CEK_ALGORITHM;
 import static org.apache.hadoop.fs.s3a.impl.AWSHeaders.UNENCRYPTED_CONTENT_LENGTH;
@@ -47,7 +41,7 @@ import static org.apache.hadoop.fs.s3a.impl.InternalConstants.CSE_PADDING_LENGTH
 /**
  * S3 client side encryption (CSE) utility class.
  */
-@InterfaceAudience.Public
+@InterfaceAudience.Private
 @InterfaceStability.Evolving
 public final class CSEUtils {
 
@@ -55,20 +49,16 @@ public final class CSEUtils {
   }
 
   /**
-   * Checks if the file suffix ends CSE file suffix.
-   * {@link org.apache.hadoop.fs.s3a.Constants#S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX}
-   * when the config
-   * @param key file name
-   * @return true if file name ends with CSE instruction file suffix
-   */
-  public static boolean isCSEInstructionFile(String key) {
-    return key.endsWith(S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX);
-  }
-
-  /**
-   * Checks if CSE-KMS or CSE-CUSTOM is set.
-   * @param encryptionMethod type of encryption used
-   * @return true if encryption method is CSE-KMS or CSE-CUSTOM
+   * Checks if Client-Side Encryption (CSE) is enabled based on the encryption method.
+   *
+   * Validates if the provided encryption method matches either CSE-KMS or CSE-Custom
+   * encryption methods. These are the two supported client-side encryption methods.
+   *
+   * @param encryptionMethod The encryption method to check (case-sensitive)
+   * @return                 true if the encryption method is either CSE-KMS or CSE-Custom,
+   *                         false otherwise
+   * @see S3AEncryptionMethods#CSE_KMS
+   * @see S3AEncryptionMethods#CSE_CUSTOM
    */
   public static boolean isCSEEnabled(String encryptionMethod) {
     return CSE_KMS.getMethod().equals(encryptionMethod) ||
@@ -76,54 +66,59 @@ public final class CSEUtils {
   }
 
   /**
-   * Checks if a given S3 object is encrypted or not by checking following two conditions
-   * 1. if object metadata contains x-amz-cek-alg
-   * 2. if instruction file is present
+   * Checks if an S3 object is encrypted by examining its metadata.
    *
-   * @param s3Client S3 client
-   * @param factory   S3 request factory
-   * @param key      key value of the s3 object
-   * @return true if S3 object is encrypted
+   * This method performs a HEAD request on the object and checks for the presence
+   * of encryption metadata (specifically the CEK algorithm indicator).
+   *
+   * @param store The S3AStore instance used to access the S3 object
+   * @param key   The key (path) of the S3 object to check
+   * @return      true if the object is encrypted (has CEK algorithm metadata),
+   *              false otherwise
+   * @throws IOException If there's an error accessing the object metadata or
+   *                    communicating with S3
    */
-  public static boolean isObjectEncrypted(S3Client s3Client, RequestFactory factory, String key) {
-    HeadObjectRequest.Builder requestBuilder = factory.newHeadObjectRequestBuilder(key);
-    HeadObjectResponse headObjectResponse = s3Client.headObject(requestBuilder.build());
+  public static boolean isObjectEncrypted(S3AStore store,
+      String key) throws IOException {
+    HeadObjectResponse headObjectResponse = store.headObject(key,
+        null,
+        null,
+        null,
+        "getObjectMetadata");
+
     if (headObjectResponse.hasMetadata() &&
         headObjectResponse.metadata().get(CRYPTO_CEK_ALGORITHM) != null) {
       return true;
-    }
-    HeadObjectRequest.Builder instructionFileRequestBuilder =
-        factory.newHeadObjectRequestBuilder(key + S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX);
-    try {
-      s3Client.headObject(instructionFileRequestBuilder.build());
-      return true;
-    } catch (NoSuchKeyException e) {
-      // Ignore. This indicates no instruction file is present
     }
     return false;
   }
 
   /**
-   * Get the unencrypted length of the object.
+   * Determines the actual unencrypted length of an S3 object.
    *
-   * @param s3Client           S3 client
-   * @param bucket             bucket name of the s3 object
-   * @param key                key value of the s3 object
-   * @param factory            S3 request factory
-   * @param contentLength      S3 object length
-   * @param headObjectResponse response from headObject call
-   * @return unencrypted length of the object
-   * @throws IOException IO failures
+   * This method uses a three-step process to determine the object's unencrypted length:
+   * 1. If the object is not encrypted, returns the original content length
+   * 2. If encrypted, attempts to read the unencrypted length from object metadata
+   * 3. If metadata is unavailable, calculates length by performing a ranged GET operation
+   *
+   * @param store              The S3AStore instance used to access the S3 object
+   * @param key               The key (path) of the S3 object
+   * @param contentLength     The encrypted object's content length
+   * @param headObjectResponse The object's metadata from a HEAD request, may be null
+   * @return                  The length of the object's unencrypted content
+   * @throws IOException      If there's an error:
+   *                         - accessing the object or its metadata
+   *                         - parsing the unencrypted length from metadata
+   *                         - performing the ranged GET operation
+   *                         - computing the unencrypted length
    */
-  public static long getUnPaddedObjectLength(S3Client s3Client,
-      String bucket,
+  public static long getUnencryptedObjectLength(S3AStore store,
       String key,
-      RequestFactory factory,
       long contentLength,
       HeadObjectResponse headObjectResponse) throws IOException {
 
     // if object is unencrypted, return the actual size
-    if (!isObjectEncrypted(s3Client, factory, key)) {
+    if (!isObjectEncrypted(store, key)) {
       return contentLength;
     }
 
@@ -142,12 +137,7 @@ public final class CSEUtils {
       if (minPlaintextLength < 0) {
         minPlaintextLength = 0;
       }
-      GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-          .bucket(bucket)
-          .key(key)
-          .range(formatRange(minPlaintextLength, contentLength))
-          .build();
-      try (InputStream is = s3Client.getObject(getObjectRequest)) {
+      try (InputStream is = store.getRangedS3Object(key, minPlaintextLength, contentLength)) {
         int i = 0;
         while (is.read() != -1) {
           i++;
@@ -161,14 +151,26 @@ public final class CSEUtils {
   }
 
   /**
-   * Configure CSE params based on encryption algorithm.
-   * @param conf Configuration
-   * @param bucket bucket name
-   * @param algorithm encryption algorithm
-   * @return CSEMaterials
-   * @throws IOException IO failures
+   * Creates encryption materials for client-side encryption based on the specified algorithm.
+   *
+   * Supports two types of client-side encryption:
+   * <ul>
+   *   <li>CSE_KMS: Uses AWS KMS for key management</li>
+   *   <li>CSE_CUSTOM: Uses a custom cryptographic implementation</li>
+   * </ul>
+   *
+   * @param conf      The configuration containing encryption settings
+   * @param bucket    The S3 bucket name for which encryption materials are being created
+   * @param algorithm The encryption algorithm to use (CSE_KMS or CSE_CUSTOM)
+   * @return         CSEMaterials configured with the appropriate encryption settings
+   * @throws IOException If there's an error retrieving encryption configuration
+   * @throws IllegalArgumentException If:
+   *                                 - KMS key ID is null or empty (for CSE_KMS)
+   *                                 - Custom crypto class name is null or empty (for CSE_CUSTOM)
+   *                                 - Unsupported encryption algorithm is specified
    */
-  public static CSEMaterials getClientSideEncryptionMaterials(Configuration conf, String bucket,
+  public static CSEMaterials getClientSideEncryptionMaterials(Configuration conf,
+      String bucket,
       S3AEncryptionMethods algorithm) throws IOException {
     switch (algorithm) {
     case CSE_KMS:

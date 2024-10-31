@@ -194,6 +194,7 @@ public class ITestConnectionTimeouts extends AbstractS3ATestBase {
    */
   @Test
   public void testObjectUploadTimeouts() throws Throwable {
+    skipIfClientSideEncryption();
     AWSClientConfig.setMinimumOperationDuration(Duration.ZERO);
     final Path dir = methodPath();
     Path file = new Path(dir, "file");

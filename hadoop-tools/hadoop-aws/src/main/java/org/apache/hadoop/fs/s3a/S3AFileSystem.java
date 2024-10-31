@@ -74,7 +74,6 @@ import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
@@ -248,7 +247,6 @@ import static org.apache.hadoop.fs.s3a.impl.CallableSupplier.submit;
 import static org.apache.hadoop.fs.s3a.impl.CreateFileBuilder.OPTIONS_CREATE_FILE_NO_OVERWRITE;
 import static org.apache.hadoop.fs.s3a.impl.CreateFileBuilder.OPTIONS_CREATE_FILE_OVERWRITE;
 import static org.apache.hadoop.fs.s3a.impl.CreateFileBuilder.OPTIONS_CREATE_FILE_PERFORMANCE;
-import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.isObjectNotFound;
 import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.isUnknownBucket;
 import static org.apache.hadoop.fs.s3a.impl.HeaderProcessing.CONTENT_TYPE_OCTET_STREAM;
 import static org.apache.hadoop.fs.s3a.impl.InternalConstants.AP_REQUIRED_EXCEPTION;
@@ -782,7 +780,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
           BULK_DELETE_PAGE_SIZE_DEFAULT, 0);
       checkArgument(pageSize <= InternalConstants.MAX_ENTRIES_TO_DELETE,
               "page size out of range: %s", pageSize);
-      listing = new Listing(listingOperationCallbacks, createStoreContext(), fsHandler);
+      listing = new Listing(listingOperationCallbacks, createStoreContext());
       // now the open file logic
       openFileHelper = new OpenFileSupport(
           changeDetectionPolicy,
@@ -1164,7 +1162,8 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
         .withChecksumValidationEnabled(
             conf.getBoolean(CHECKSUM_VALIDATION, CHECKSUM_VALIDATION_DEFAULT))
         .withClientSideEncryptionEnabled(isCSEEnabled)
-        .withClientSideEncryptionMaterials(cseMaterials);
+        .withClientSideEncryptionMaterials(cseMaterials)
+        .withKMSRegion(conf.get(S3_ENCRYPTION_CSE_KMS_REGION));
 
     // this is where clients and the transfer manager are created on demand.
     return createClientManager(clientFactory, unencryptedClientFactory, parameters,
@@ -2646,8 +2645,14 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
         final S3AFileStatus status,
         final boolean includeSelf) throws IOException {
       auditSpan.activate();
-      return innerListFiles(path, true,
-          fsHandler.getFileStatusAcceptor(path, includeSelf), status);
+      return innerListFiles(
+          path,
+          true,
+          includeSelf
+              ? Listing.ACCEPT_ALL_BUT_S3N
+              : new Listing.AcceptAllButSelfAndS3nDirs(path),
+          status
+      );
     }
 
     @Override
@@ -2693,7 +2698,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
           listing.createFileStatusListingIterator(path,
               createListObjectsRequest(key, null),
               ACCEPT_ALL,
-              fsHandler.getFileStatusAcceptor(path, true),
+              Listing.ACCEPT_ALL_BUT_S3N,
               auditSpan));
     }
 
@@ -2798,8 +2803,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
      */
     @Override
     public long getObjectSize(S3Object s3Object) throws IOException {
-      return fsHandler.getS3ObjectSize(s3Object.key(), s3Object.size(), store, bucket,
-          getRequestFactory(), null);
+      return fsHandler.getS3ObjectSize(s3Object.key(), s3Object.size(), store, null);
     }
 
     @Override
@@ -3068,45 +3072,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
       ChangeTracker changeTracker,
       Invoker changeInvoker,
       String operation) throws IOException {
-    HeadObjectResponse response = changeInvoker.retryUntranslated("GET " + key, true,
-        () -> {
-          HeadObjectRequest.Builder requestBuilder =
-              getRequestFactory().newHeadObjectRequestBuilder(key);
-          incrementStatistic(OBJECT_METADATA_REQUESTS);
-          DurationTracker duration = getDurationTrackerFactory()
-              .trackDuration(ACTION_HTTP_HEAD_REQUEST.getSymbol());
-          try {
-            LOG.debug("HEAD {} with change tracker {}", key, changeTracker);
-            if (changeTracker != null) {
-              changeTracker.maybeApplyConstraint(requestBuilder);
-            }
-            HeadObjectResponse headObjectResponse = getS3Client().headObject(
-                requestBuilder.build());
-            long length = fsHandler.getS3ObjectSize(key, headObjectResponse.contentLength(),
-                store, bucket, getRequestFactory(), headObjectResponse);
-            // overwrite the content length
-            headObjectResponse = headObjectResponse.toBuilder()
-                .contentLength(length)
-                .build();
-            if (changeTracker != null) {
-              changeTracker.processMetadata(headObjectResponse, operation);
-            }
-            return headObjectResponse;
-          } catch (AwsServiceException ase) {
-            if (!isObjectNotFound(ase)) {
-              // file not found is not considered a failure of the call,
-              // so only switch the duration tracker to update failure
-              // metrics on other exception outcomes.
-              duration.failed();
-            }
-            throw ase;
-          } finally {
-            // update the tracker.
-            duration.close();
-          }
-        });
-    incrementReadOperations();
-    return response;
+    return store.headObject(key, changeTracker, changeInvoker, fsHandler, operation);
   }
 
   /**
@@ -3762,7 +3728,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
         return listing.createProvidedFileStatusIterator(
                 stats,
                 ACCEPT_ALL,
-                fsHandler.getFileStatusAcceptor(path, true));
+                Listing.ACCEPT_ALL_BUT_S3N);
       }
     }
     // Here we have a directory which may or may not be empty.
@@ -3960,8 +3926,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
     @Override
     public RemoteIterator<S3ALocatedFileStatus> listFilesIterator(final Path path,
         final boolean recursive) throws IOException {
-      return S3AFileSystem.this.innerListFiles(path, recursive,
-          fsHandler.getFileStatusAcceptor(path, true), null);
+      return S3AFileSystem.this.innerListFiles(path, recursive, Listing.ACCEPT_ALL_BUT_S3N, null);
     }
   }
 
@@ -5253,7 +5218,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
     return toLocatedFileStatusIterator(
         trackDurationAndSpan(INVOCATION_LIST_FILES, path, () ->
             innerListFiles(path, recursive,
-                fsHandler.getFileStatusAcceptor(path), null)));
+                new Listing.AcceptFilesOnly(path), null)));
   }
 
   /**
@@ -5271,7 +5236,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
     final Path path = qualify(f);
     return trackDurationAndSpan(INVOCATION_LIST_FILES, path, () ->
         innerListFiles(path, recursive,
-            fsHandler.getFileStatusAcceptor(path, true),
+            Listing.ACCEPT_ALL_BUT_S3N,
             null));
   }
 

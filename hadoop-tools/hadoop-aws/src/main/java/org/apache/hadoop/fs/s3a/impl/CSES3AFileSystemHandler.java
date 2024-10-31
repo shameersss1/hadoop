@@ -26,8 +26,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.s3a.Listing;
 import org.apache.hadoop.fs.s3a.S3AEncryptionMethods;
 import org.apache.hadoop.fs.s3a.S3AStore;
 import org.apache.hadoop.fs.s3a.S3ClientFactory;
@@ -51,34 +49,6 @@ public class CSES3AFileSystemHandler implements S3AFileSystemHandler{
   }
 
   /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path         the path for which the listing is being performed
-   * @param includeSelf  a boolean indicating whether the path itself should
-   *                     be included in the listing
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  @Override
-  public Listing.FileStatusAcceptor getFileStatusAcceptor(Path path, boolean includeSelf) {
-    return includeSelf
-        ? Listing.ACCEPT_ALL_BUT_S3N
-        : new Listing.AcceptAllButSelfAndS3nDirs(path);
-  }
-
-  /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path the path for which the listing is being performed
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  @Override
-  public Listing.FileStatusAcceptor getFileStatusAcceptor(Path path) {
-    return new Listing.AcceptFilesOnly(path);
-  }
-
-  /**
    * Retrieves an object from the S3 using encrypted S3 client.
    *
    * @param store   The S3AStore object representing the S3 bucket.
@@ -88,7 +58,8 @@ public class CSES3AFileSystemHandler implements S3AFileSystemHandler{
    * @throws IOException If an error occurs while retrieving the object.
    */
   @Override
-  public ResponseInputStream<GetObjectResponse> getObject(S3AStore store, GetObjectRequest request,
+  public ResponseInputStream<GetObjectResponse> getObject(S3AStore store,
+      GetObjectRequest request,
       RequestFactory factory) throws IOException {
     return store.getOrCreateS3Client().getObject(request);
   }
@@ -103,7 +74,7 @@ public class CSES3AFileSystemHandler implements S3AFileSystemHandler{
   }
 
   /**
-   * Retrieves the client-side encryption materials for the given bucket and encryption algorithm.
+   * Retrieves the cse materials.
    *
    * @param conf      The Hadoop configuration object.
    * @param bucket    The name of the S3 bucket.
@@ -141,23 +112,21 @@ public class CSES3AFileSystemHandler implements S3AFileSystemHandler{
 
 
   /**
-   * Retrieves the unpadded size of an object in the S3.
+   * Retrieves the unencrypted length of an object in the S3 bucket.
    *
    * @param key The key (path) of the object in the S3 bucket.
-   * @param length The expected length of the object, including any padding.
+   * @param length The length of the object.
    * @param store The S3AStore object representing the S3 bucket.
-   * @param bucket The name of the S3 bucket.
-   * @param factory The RequestFactory used to create the HeadObjectRequest.
    * @param response The HeadObjectResponse containing the metadata of the object.
-   * @return The unpadded size of the object in bytes.
+   * @return The unencrypted size of the object in bytes.
    * @throws IOException If an error occurs while retrieving the object size.
    */
   @Override
-  public long getS3ObjectSize(String key, long length, S3AStore store, String bucket,
-      RequestFactory factory, HeadObjectResponse response) throws IOException {
-    long unpaddedLength = length - CSE_PADDING_LENGTH;
-    if (unpaddedLength >= 0) {
-      return unpaddedLength;
+  public long getS3ObjectSize(String key, long length, S3AStore store,
+      HeadObjectResponse response) throws IOException {
+    long unencryptedLength = length - CSE_PADDING_LENGTH;
+    if (unencryptedLength >= 0) {
+      return unencryptedLength;
     }
     return length;
   }

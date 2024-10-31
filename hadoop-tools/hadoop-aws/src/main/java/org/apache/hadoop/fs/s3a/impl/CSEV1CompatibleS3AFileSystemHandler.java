@@ -21,8 +21,6 @@ package org.apache.hadoop.fs.s3a.impl;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.s3a.Listing;
 import org.apache.hadoop.fs.s3a.S3AStore;
 import org.apache.hadoop.fs.s3a.S3ClientFactory;
 import org.apache.hadoop.fs.s3a.api.RequestFactory;
@@ -52,32 +50,6 @@ public class CSEV1CompatibleS3AFileSystemHandler extends CSES3AFileSystemHandler
   }
 
   /**
-   * {@inheritDoc}
-   *
-   * <p>This implementation returns a {@link Listing.AcceptAllButS3nDirsAndCSEInstructionFile}
-   * or {@link Listing.AcceptAllButSelfAndS3nDirsAndCSEInstructionFile} object
-   * based on the value of the {@code includeSelf} parameter.
-   */
-  @Override
-  public Listing.FileStatusAcceptor getFileStatusAcceptor(Path path, boolean includeSelf) {
-    return includeSelf
-        ? new Listing.AcceptAllButS3nDirsAndCSEInstructionFile()
-        : new Listing.AcceptAllButSelfAndS3nDirsAndCSEInstructionFile(path);
-  }
-
-  /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path the path for which the listing is being performed
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  @Override
-  public Listing.FileStatusAcceptor getFileStatusAcceptor(Path path) {
-    return new Listing.AcceptFilesOnlyExceptCSEInstructionFile(path);
-  }
-
-  /**
    * Retrieves an object from the S3.
    * If the S3 object is encrypted, it uses the encrypted S3 client to retrieve the object else
    * it uses the unencrypted S3 client.
@@ -89,9 +61,10 @@ public class CSEV1CompatibleS3AFileSystemHandler extends CSES3AFileSystemHandler
    * @throws IOException If an error occurs while retrieving the object.
    */
   @Override
-  public ResponseInputStream<GetObjectResponse> getObject(S3AStore store, GetObjectRequest request,
+  public ResponseInputStream<GetObjectResponse> getObject(S3AStore store,
+      GetObjectRequest request,
       RequestFactory factory) throws IOException {
-    boolean isEncrypted = isObjectEncrypted(store.getOrCreateS3Client(), factory, request.key());
+    boolean isEncrypted = isObjectEncrypted(store, request.key());
     return isEncrypted ? store.getOrCreateS3Client().getObject(request)
         : store.getOrCreateUnencryptedS3Client().getObject(request);
   }
@@ -110,23 +83,19 @@ public class CSEV1CompatibleS3AFileSystemHandler extends CSES3AFileSystemHandler
     return ReflectionUtils.newInstance(s3ClientFactoryClass, conf);
   }
 
-
   /**
-   * Retrieves the unpadded size of an object in the S3 bucket.
+   * Retrieves the unencrypted length of an object in the S3 bucket.
    *
    * @param key The key (path) of the object in the S3 bucket.
    * @param length The length of the object.
    * @param store The S3AStore object representing the S3 bucket.
-   * @param bucket The name of the S3 bucket.
-   * @param factory The RequestFactory used to create the HeadObjectRequest.
    * @param response The HeadObjectResponse containing the metadata of the object.
-   * @return The unpadded size of the object in bytes.
+   * @return The unencrypted size of the object in bytes.
    * @throws IOException If an error occurs while retrieving the object size.
    */
   @Override
-  public long getS3ObjectSize(String key, long length, S3AStore store, String bucket,
-      RequestFactory factory, HeadObjectResponse response) throws IOException {
-    return CSEUtils.getUnPaddedObjectLength(store.getOrCreateS3Client(), bucket,
-        key, factory, length, response);
+  public long getS3ObjectSize(String key, long length, S3AStore store,
+      HeadObjectResponse response) throws IOException {
+    return CSEUtils.getUnencryptedObjectLength(store, key, length, response);
   }
 }

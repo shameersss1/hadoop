@@ -126,6 +126,12 @@ public interface S3ClientFactory {
     private Boolean isCSEEnabled = false;
 
     /**
+     * KMS region.
+     * This is only used if CSE is enabled.
+     */
+    private String kmsRegion;
+
+    /**
      * Client side encryption materials.
      */
     private CSEMaterials cseMaterials;
@@ -452,6 +458,18 @@ public interface S3ClientFactory {
     }
 
     /**
+     * Set the KMS client region.
+     * This is required for CSE-KMS
+     *
+     * @param value new value
+     * @return the builder
+     */
+    public S3ClientCreationParameters withKMSRegion(final String value) {
+      this.kmsRegion = value;
+      return this;
+    }
+
+    /**
      * Get the client side encryption flag.
      * @return client side encryption flag
      */
@@ -484,6 +502,14 @@ public interface S3ClientFactory {
      */
     public String getRegion() {
       return region;
+    }
+
+    /**
+     * Get the KMS region.
+     * @return Configured KMS region.
+     */
+    public String getKmsRegion() {
+      return kmsRegion;
     }
 
     /**

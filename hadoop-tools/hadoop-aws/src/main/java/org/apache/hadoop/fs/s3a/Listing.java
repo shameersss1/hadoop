@@ -30,7 +30,6 @@ import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.fs.RemoteIterator;
 import org.apache.hadoop.fs.s3a.impl.AbstractStoreOperation;
 import org.apache.hadoop.fs.s3a.impl.ListingOperationCallbacks;
-import org.apache.hadoop.fs.s3a.impl.S3AFileSystemHandler;
 import org.apache.hadoop.fs.s3a.impl.StoreContext;
 import org.apache.hadoop.fs.statistics.IOStatistics;
 import org.apache.hadoop.fs.statistics.IOStatisticsAggregator;
@@ -59,7 +58,6 @@ import static org.apache.hadoop.fs.s3a.S3AUtils.maybeAddTrailingSlash;
 import static org.apache.hadoop.fs.s3a.S3AUtils.objectRepresentsDirectory;
 import static org.apache.hadoop.fs.s3a.S3AUtils.stringify;
 import static org.apache.hadoop.fs.s3a.auth.RoleModel.pathToKey;
-import static org.apache.hadoop.fs.s3a.impl.CSEUtils.isCSEInstructionFile;
 import static org.apache.hadoop.fs.statistics.StoreStatisticNames.OBJECT_CONTINUE_LIST_REQUEST;
 import static org.apache.hadoop.fs.statistics.StoreStatisticNames.OBJECT_LIST_REQUEST;
 import static org.apache.hadoop.fs.statistics.impl.IOStatisticsBinding.iostatisticsStore;
@@ -77,18 +75,16 @@ import static org.apache.hadoop.util.functional.RemoteIterators.remoteIteratorFr
 public class Listing extends AbstractStoreOperation {
 
   private static final Logger LOG = S3AFileSystem.LOG;
-  private final S3AFileSystemHandler handler;
 
-  public static final FileStatusAcceptor ACCEPT_ALL_BUT_S3N =
+  static final FileStatusAcceptor ACCEPT_ALL_BUT_S3N =
       new AcceptAllButS3nDirs();
 
   private final ListingOperationCallbacks listingOperationCallbacks;
 
   public Listing(ListingOperationCallbacks listingOperationCallbacks,
-      StoreContext storeContext, S3AFileSystemHandler handler) {
+      StoreContext storeContext) {
     super(storeContext);
     this.listingOperationCallbacks = listingOperationCallbacks;
-    this.handler = handler;
   }
 
   /**
@@ -239,7 +235,7 @@ public class Listing extends AbstractStoreOperation {
             listingOperationCallbacks
                 .createListObjectsRequest(key, "/", span),
             filter,
-            handler.getFileStatusAcceptor(dir, false),
+            new AcceptAllButSelfAndS3nDirs(dir),
             span));
   }
 
@@ -268,7 +264,7 @@ public class Listing extends AbstractStoreOperation {
         path,
         request,
         ACCEPT_ALL,
-        handler.getFileStatusAcceptor(path, false),
+        new AcceptAllButSelfAndS3nDirs(path),
         span);
   }
 
@@ -283,7 +279,7 @@ public class Listing extends AbstractStoreOperation {
    * Interface to implement the logic deciding whether to accept a s3Object
    * entry or path as a valid file or directory.
    */
-  public interface FileStatusAcceptor {
+  interface FileStatusAcceptor {
 
     /**
      * Predicate to decide whether or not to accept a s3Object entry.
@@ -448,6 +444,7 @@ public class Listing extends AbstractStoreOperation {
      * Build the next status batch from a listing.
      * @param objects the next object listing
      * @return true if this added any entries after filtering
+     * @throws IOException IO problems. This can happen only when CSE is enabled.
      */
     private boolean buildNextStatusBatch(S3ListResult objects) throws IOException {
       // counters for debug logs
@@ -456,6 +453,8 @@ public class Listing extends AbstractStoreOperation {
       List<S3AFileStatus> stats = new ArrayList<>(
           objects.getS3Objects().size() +
               objects.getCommonPrefixes().size());
+      String userName = getStoreContext().getUsername();
+      long blockSize = listingOperationCallbacks.getDefaultBlockSize(null);
       // objects
       for (S3Object s3Object : objects.getS3Objects()) {
         String key = s3Object.key();
@@ -466,9 +465,8 @@ public class Listing extends AbstractStoreOperation {
         // Skip over keys that are ourselves and old S3N _$folder$ files
         if (acceptor.accept(keyPath, s3Object) && filter.accept(keyPath)) {
           S3AFileStatus status = createFileStatus(keyPath, s3Object,
-              listingOperationCallbacks.getDefaultBlockSize(keyPath),
-              getStoreContext().getUsername(),
-              s3Object.eTag(), null,
+              blockSize, userName, s3Object.eTag(),
+              null,
               listingOperationCallbacks.getObjectSize(s3Object));
           LOG.debug("Adding: {}", status);
           stats.add(status);
@@ -727,7 +725,7 @@ public class Listing extends AbstractStoreOperation {
    * Accept all entries except the base path and those which map to S3N
    * pseudo directory markers.
    */
-  public static class AcceptFilesOnly implements FileStatusAcceptor {
+  static class AcceptFilesOnly implements FileStatusAcceptor {
     private final Path qualifiedPath;
 
     public AcceptFilesOnly(Path qualifiedPath) {
@@ -767,61 +765,6 @@ public class Listing extends AbstractStoreOperation {
   }
 
   /**
-   * Accept all entries except the base path and those which map to S3N
-   * pseudo directory markers and CSE instruction file.
-   */
-  public static class AcceptFilesOnlyExceptCSEInstructionFile implements FileStatusAcceptor {
-    private final Path qualifiedPath;
-
-    /**
-     * Constructor.
-     * @param qualifiedPath an already-qualified path.
-     */
-    public AcceptFilesOnlyExceptCSEInstructionFile(Path qualifiedPath) {
-      this.qualifiedPath = qualifiedPath;
-    }
-
-    /**
-     * Reject a s3Object entry if the key path is the qualified Path, or
-     * it ends with {@code "_$folder$"} or {@code ".instruction"}.
-     * @param keyPath key path of the entry
-     * @param s3Object s3Object entry
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.
-     */
-    @Override
-    public boolean accept(Path keyPath, S3Object s3Object) {
-      return !keyPath.equals(qualifiedPath)
-          && !s3Object.key().endsWith(S3N_FOLDER_SUFFIX)
-          && !objectRepresentsDirectory(s3Object.key())
-          && !isCSEInstructionFile(s3Object.key());
-    }
-
-    /**
-     * Accept no directory paths.
-     * @param keyPath qualified path to the entry
-     * @param prefix common prefix in listing.
-     * @return false, always.
-     */
-    @Override
-    public boolean accept(Path keyPath, String prefix) {
-      return false;
-    }
-
-    /**
-     * Reject if  the file status is not a file or is a CSE instruction file.
-     * @param status file status containing file path information
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.
-     */
-    @Override
-    public boolean accept(FileStatus status) {
-      return (status != null) && status.isFile()
-          && !isCSEInstructionFile(status.getPath().toString());
-    }
-  }
-
-  /**
    * Accept all entries except those which map to S3N pseudo directory markers.
    */
   static class AcceptAllButS3nDirs implements FileStatusAcceptor {
@@ -838,47 +781,6 @@ public class Listing extends AbstractStoreOperation {
       return !status.getPath().toString().endsWith(S3N_FOLDER_SUFFIX);
     }
 
-  }
-
-  /**
-   * Accept all entries except those which map to S3N pseudo directory markers and CSE instruction
-   * file.
-   */
-  public static class AcceptAllButS3nDirsAndCSEInstructionFile implements FileStatusAcceptor {
-
-    /**
-     * Reject a s3Object entry if the key ends with {@code "_$folder$"} or {@code ".instruction"}.
-     * @param keyPath key path of the entry
-     * @param s3Object s3Object entry
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.
-     */
-    public boolean accept(Path keyPath, S3Object s3Object) {
-      return !s3Object.key().endsWith(S3N_FOLDER_SUFFIX) &&
-          !isCSEInstructionFile(s3Object.key());
-    }
-
-    /**
-     * Reject if the key ends with {@code "_$folder$"} or {@code ".instruction"}.
-     * @param keyPath qualified path to the entry
-     * @param prefix the prefix
-     * @return true if the entry is accepted
-     */
-    public boolean accept(Path keyPath, String prefix) {
-      return !keyPath.toString().endsWith(S3N_FOLDER_SUFFIX) &&
-          !isCSEInstructionFile(keyPath.toString());
-    }
-
-    /**
-     * Reject if the file status is a CSE instruction file or ends with {@code "_$folder$"}.
-     * @param status file status containing file path information
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.
-     */
-    public boolean accept(FileStatus status) {
-      return !status.getPath().toString().endsWith(S3N_FOLDER_SUFFIX) &&
-          isCSEInstructionFile(status.getPath().toString());
-    }
   }
 
   /**
@@ -927,66 +829,6 @@ public class Listing extends AbstractStoreOperation {
     @Override
     public boolean accept(FileStatus status) {
       return (status != null) && !status.getPath().equals(qualifiedPath);
-    }
-  }
-
-  /**
-   * Accept all entries except the base path, those which map to S3N pseudo directory markers
-   * and files which ends with CSE instruction file.
-   */
-  public static class AcceptAllButSelfAndS3nDirsAndCSEInstructionFile
-      implements FileStatusAcceptor {
-
-    /** Base path. */
-    private final Path qualifiedPath;
-
-    /**
-     * Constructor.
-     * @param qualifiedPath an already-qualified path.
-     */
-    public AcceptAllButSelfAndS3nDirsAndCSEInstructionFile(Path qualifiedPath) {
-      this.qualifiedPath = qualifiedPath;
-    }
-
-    /**
-     * Reject a s3Object entry if the key path is the qualified Path, or
-     * it ends with {@code "_$folder$"}. or ends with {@code ".instruction"}.
-     * @param keyPath key path of the entry
-     * @param s3Object s3Object entry
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.)
-     */
-    @Override
-    public boolean accept(Path keyPath, S3Object s3Object) {
-      return !keyPath.equals(qualifiedPath) &&
-          !s3Object.key().endsWith(S3N_FOLDER_SUFFIX) &&
-          !isCSEInstructionFile(s3Object.key());
-    }
-
-    /**
-     * Accept all prefixes except the one for the base path, "self" and CSE instruction file.
-     * @param keyPath qualified path to the entry
-     * @param prefix common prefix in listing.
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.
-     */
-    @Override
-    public boolean accept(Path keyPath, String prefix) {
-      return !keyPath.equals(qualifiedPath) &&
-          !isCSEInstructionFile(keyPath.toString());
-    }
-
-    /**
-     * Reject if the file status is the base path, a CSE instruction file or ends
-     * with {@code "_$folder$"}.
-     * @param status file status containing file path information
-     * @return true if the entry is accepted (i.e. that a status entry
-     * should be generated.
-     */
-    @Override
-    public boolean accept(FileStatus status) {
-      return (status != null) && !status.getPath().equals(qualifiedPath) &&
-          !isCSEInstructionFile(status.getPath().toString());
     }
   }
 

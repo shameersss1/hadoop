@@ -777,11 +777,9 @@ public final class Constants {
   /**
    * Config to provide backward compatibility with V1 encryption client.
    * Enabling this configuration will invoke the followings
-   * 1. Unencrypted s3 objects will be read using unecrypted/base s3 client when CSE is enabled.
-   * 2. Size of encrypted object will be calculated using ranged S3 calls.
-   * 3. While listing s3 objects, encryption metadata file with suffix
-   * {@link #S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX} will be skipped.
-   * This is to provide backward compatibility with V1 client.
+   * 1. Unencrypted s3 objects will be read using unencrypted/base s3 client when CSE is enabled.
+   * 2. Size of encrypted object will be fetched from object header if present or
+   * calculated using ranged S3 GET calls.
    * value:{@value}
    */
   public static final String S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED =
@@ -793,12 +791,9 @@ public final class Constants {
   public static final boolean S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED_DEFAULT = false;
 
   /**
-   * Suffix of instruction file : {@value}.
+   * S3 CSE-KMS KMS region config.
    */
-  public static final String S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX = ".instruction";
-
-
-
+  public static final String S3_ENCRYPTION_CSE_KMS_REGION = "fs.s3a.encryption.cse.kms.region";
 
   /**
    * List of custom Signers. The signer class will be loaded, and the signer

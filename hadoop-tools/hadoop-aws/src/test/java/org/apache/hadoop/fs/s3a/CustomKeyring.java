@@ -32,11 +32,11 @@ import software.amazon.encryption.s3.materials.KmsKeyring;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 
-import static org.apache.hadoop.fs.s3a.Constants.AWS_REGION;
 import static org.apache.hadoop.fs.s3a.Constants.AWS_S3_DEFAULT_REGION;
+import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_CSE_KMS_REGION;
 
 /**
- * Custom Keyring implementation by warpping over KmsKeyring.
+ * Custom Keyring implementation.
  * This is used for testing {@link ITestS3AClientSideEncryptionCustom}.
  */
 public class CustomKeyring implements Keyring {
@@ -49,7 +49,7 @@ public class CustomKeyring implements Keyring {
     this.conf = conf;
     String bucket = S3ATestUtils.getFsName(conf);
     kmsClient = KmsClient.builder()
-        .region(Region.of(conf.get(AWS_REGION, AWS_S3_DEFAULT_REGION)))
+        .region(Region.of(conf.get(S3_ENCRYPTION_CSE_KMS_REGION, AWS_S3_DEFAULT_REGION)))
         .credentialsProvider(new TemporaryAWSCredentialsProvider(
             new Path(bucket).toUri(), conf))
         .build();

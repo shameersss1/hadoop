@@ -21,6 +21,8 @@ package org.apache.hadoop.fs.s3a.test;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 
+import software.amazon.awssdk.services.s3.model.S3Object;
+
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.s3a.S3AFileStatus;
 import org.apache.hadoop.fs.s3a.S3ALocatedFileStatus;
@@ -29,8 +31,6 @@ import org.apache.hadoop.fs.s3a.S3ListResult;
 import org.apache.hadoop.fs.s3a.impl.ListingOperationCallbacks;
 import org.apache.hadoop.fs.statistics.DurationTrackerFactory;
 import org.apache.hadoop.fs.store.audit.AuditSpan;
-
-import software.amazon.awssdk.services.s3.model.S3Object;
 
 /**
  * Stub implementation of {@link ListingOperationCallbacks}.

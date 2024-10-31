@@ -705,18 +705,30 @@ clients where S3-CSE has not been enabled.
 ### Features
 
 - Supports client side encryption with keys managed in AWS KMS (CSE-KMS)
-- Supports client side encryption with custom keys by implementing custom [Keyring](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/choose-keyring.html) (CSE-CUSTOM)
-- Backward compatible with older encryption clients like `AmazonS3EncryptionClient.java`(V1) and `AmazonS3EncryptionClientV2.java`(V2)
+- Supports client side encryption with custom keys by 
+implementing custom [Keyring](https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/choose-keyring.html) (CSE-CUSTOM)
+- Backward compatible with older encryption clients 
+like `AmazonS3EncryptionClient.java`(V1) and `AmazonS3EncryptionClientV2.java`(V2)
 - encryption settings propagated into jobs through any issued delegation tokens.
 - encryption information stored as headers in the uploaded object.
 
 ### Compatibility Issues
 
-- The V1 and V2 clients support reading unencrypted S3 objects, whereas the V3 client does not. In order to read S3 objects in a directory with a mix of encrypted and unencrypted objects.
-- Unlike the V2 and V3 clients which always pads 16 bytes, V1 client pads extra bytes to the next multiple of 16. For example if unencrypted object size is 12bytes, V1 client pads extra 4bytes to make it multiple of 16.
-- The V1 client supports storing encryption metadata in instruction file.
+- The V1 client support reading unencrypted S3 objects, whereas the V3 
+client does not.
+- Unlike the V2 and V3 clients, which always append 16 bytes to a file, 
+the V1 client appends extra bytes to the next multiple of 16. 
+For example, if the unencrypted object size is 28 bytes, 
+the V1 client pads an extra 4 bytes to make it a multiple of 16.
 
-Inorder to workaround the above compatibility issues set `fs.s3a.encryption.cse.v1.compatibility.enabled=true`
+Inorder to workaround the above compatibility issues 
+set `fs.s3a.encryption.cse.v1.compatibility.enabled=true`
+
+Note: The V1 client supports storing encryption metadata in a separate file with 
+the suffix <fileName>.instruction. However, these instruction files are not 
+skipped and will lead to exceptions or unknown issues. 
+Therefore, it is recommended not to use client-side encryption (CSE) 
+when instruction files are used to store encryption metadata.
 
 ### Limitations
 
@@ -738,6 +750,7 @@ Inorder to workaround the above compatibility issues set `fs.s3a.encryption.cse.
 - If already created, [view the kms key ID by these steps.](https://docs.aws.amazon.com/kms/latest/developerguide/find-cmk-id-arn.html)
 - Set `fs.s3a.encryption.algorithm=CSE-KMS`.
 - Set `fs.s3a.encryption.key=<KMS_KEY_ID>`.
+- Set `fs.s3a.encryption.cse.kms.region=<KMS_REGION>` 
 
 KMS_KEY_ID:
 
@@ -766,11 +779,17 @@ S3-CSE to work.
      <name>fs.s3a.encryption.key</name>
      <value>${KMS_KEY_ID}</value>
  </property>
+
+<property>
+<name>fs.s3a.encryption.cse.kms.region</name>
+<value>${KMS_REGION}</value>
+</property>
 ```
 
 #### 2. CSE-CUSTOM
 - Set `fs.s3a.encryption.algorithm=CSE-CUSTOM`.
-- Set `fs.s3a.encryption.cse.custom.cryptographic.material.manager.class.name=<fully qualified class name>`.
+- Set 
+`fs.s3a.encryption.cse.custom.cryptographic.material.manager.class.name=<fully qualified class name>`.
 
 Example for custom keyring implementation
 ```

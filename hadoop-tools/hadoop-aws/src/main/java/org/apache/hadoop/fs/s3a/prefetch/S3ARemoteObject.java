@@ -187,7 +187,7 @@ public class S3ARemoteObject {
     streamStatistics.streamOpened();
     final GetObjectRequest request = client
         .newGetRequestBuilder(s3Attributes.getKey())
-        .range(S3AUtils.formatRange(offset, offset + size - 1))
+        . range(S3AUtils.formatRange(offset, offset + size - 1))
         .applyMutation(changeTracker::maybeApplyConstraint)
         .build();
 

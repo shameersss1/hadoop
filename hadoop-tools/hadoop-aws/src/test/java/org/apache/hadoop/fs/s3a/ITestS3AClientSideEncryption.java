@@ -53,7 +53,6 @@ import static org.apache.hadoop.fs.contract.ContractTestUtils.writeDataset;
 import static org.apache.hadoop.fs.s3a.Constants.MULTIPART_MIN_SIZE;
 import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_ALGORITHM;
 import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED;
-import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX;
 import static org.apache.hadoop.fs.s3a.Constants.S3_ENCRYPTION_KEY;
 import static org.apache.hadoop.fs.s3a.Constants.SERVER_SIDE_ENCRYPTION_ALGORITHM;
 import static org.apache.hadoop.fs.s3a.Constants.SERVER_SIDE_ENCRYPTION_KEY;
@@ -282,80 +281,34 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
     maybeSkipTest();
     // initialize base s3 client.
     Configuration conf = new Configuration(getConfiguration());
-    S3AFileSystem nonCseFs = createTestFileSystem(conf);
     removeBaseAndBucketOverrides(getTestBucketName(conf),
         conf,
         S3_ENCRYPTION_ALGORITHM,
         S3_ENCRYPTION_KEY,
         SERVER_SIDE_ENCRYPTION_ALGORITHM,
         SERVER_SIDE_ENCRYPTION_KEY);
-    nonCseFs.initialize(getFileSystem().getUri(), conf);
 
-    Path file = path(getMethodName());
-    // write unencrypted file
-    ContractTestUtils.writeDataset(nonCseFs, file, new byte[SMALL_FILE_SIZE],
-        SMALL_FILE_SIZE, SMALL_FILE_SIZE, true);
+    Path file = methodPath();
 
-    Configuration cseConf = new Configuration(getConfiguration());
-    cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
-    // create filesystem with cse enabled and v1 compatibility.
-    S3AFileSystem cseFs = createTestFileSystem(cseConf);
-    cseFs.initialize(getFileSystem().getUri(), cseConf);
+    try (S3AFileSystem nonCseFs = createTestFileSystem(conf)) {
+      nonCseFs.initialize(getFileSystem().getUri(), conf);
 
-    // read unencrypted file. It should not throw any exception.
-    try (FSDataInputStream in = cseFs.open(file)) {
-      in.read(new byte[SMALL_FILE_SIZE]);
-    } finally {
-      // close the filesystem
-      nonCseFs.close();
-      cseFs.close();
+      // write unencrypted file
+      ContractTestUtils.writeDataset(nonCseFs, file, new byte[SMALL_FILE_SIZE],
+          SMALL_FILE_SIZE, SMALL_FILE_SIZE, true);
     }
-  }
 
-  /**
-   * Test to check if file name with suffix ".instruction" is ignored with V1 compatibility.
-   * @throws IOException
-   */
-  @Test
-  public void testSkippingCSEInstructionFileWithV1Compatibility() throws IOException {
-    maybeSkipTest();
-    // initialize base s3 client.
-    Configuration conf = new Configuration(getConfiguration());
-    S3AFileSystem fs = createTestFileSystem(conf);
-    removeBaseAndBucketOverrides(getTestBucketName(conf),
-        conf,
-        S3_ENCRYPTION_ALGORITHM,
-        S3_ENCRYPTION_KEY,
-        SERVER_SIDE_ENCRYPTION_ALGORITHM,
-        SERVER_SIDE_ENCRYPTION_KEY);
-    fs.initialize(getFileSystem().getUri(), conf);
-
-    // write file with suffix ".instruction"
-    Path filePath = path(getMethodName());
-    Path file = new Path(filePath,
-        "file" + S3_ENCRYPTION_CSE_INSTRUCTION_FILE_SUFFIX);
-    ContractTestUtils.writeDataset(fs, file, new byte[SMALL_FILE_SIZE],
-        SMALL_FILE_SIZE, SMALL_FILE_SIZE, true);
-
-    // create filesystem with cse enabled and v1 compatibility.
     Configuration cseConf = new Configuration(getConfiguration());
     cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
-    S3AFileSystem cseFs = createTestFileSystem(cseConf);
-    cseFs.initialize(getFileSystem().getUri(), cseConf);
-    try {
-      // listing from fs without cse
-      Assertions.assertThat(fs.listStatus(filePath)).describedAs(
-              "Number of files aren't the same " + "as expected from FileStatus dir")
-          .hasSize(1);
 
-      // listing fs without cse with v1 compatibility
-      Assertions.assertThat(cseFs.listStatus(filePath)).describedAs(
-              "Number of files aren't the same " + "as expected from FileStatus dir")
-          .hasSize(0);
-    } finally {
-      // close the filesystem
-      fs.close();
-      cseFs.close();
+    // create filesystem with cse enabled and v1 compatibility.
+    try (S3AFileSystem cseFs = createTestFileSystem(cseConf)) {
+      cseFs.initialize(getFileSystem().getUri(), cseConf);
+
+      // read unencrypted file. It should not throw any exception.
+      try (FSDataInputStream in = cseFs.open(file)) {
+        in.read(new byte[SMALL_FILE_SIZE]);
+      }
     }
   }
 
@@ -369,36 +322,34 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
     maybeSkipTest();
     Configuration cseConf = new Configuration(getConfiguration());
     cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
-    S3AFileSystem fs = createTestFileSystem(cseConf);
-    fs.initialize(getFileSystem().getUri(), cseConf);
+    try (S3AFileSystem fs = createTestFileSystem(cseConf)) {
+      fs.initialize(getFileSystem().getUri(), cseConf);
 
-    Path filePath = path(getMethodName());
-    Path file = new Path(filePath, "file");
-    String key = fs.pathToKey(file);
+      Path filePath = methodPath();
+      Path file = new Path(filePath, "file");
+      String key = fs.pathToKey(file);
 
+      // write object with random content length header
+      Map<String, String> metadata = new HashMap<>();
+      metadata.put(AWSHeaders.UNENCRYPTED_CONTENT_LENGTH, "10");
+      try (AuditSpan span = span()) {
+        RequestFactory factory = RequestFactoryImpl.builder()
+            .withBucket(fs.getBucket())
+            .build();
+        PutObjectRequest.Builder putObjectRequestBuilder =
+            factory.newPutObjectRequestBuilder(key,
+                null, SMALL_FILE_SIZE, false);
+        putObjectRequestBuilder.contentLength(Long.parseLong(String.valueOf(SMALL_FILE_SIZE)));
+        putObjectRequestBuilder.metadata(metadata);
+        fs.putObjectDirect(putObjectRequestBuilder.build(),
+            PutObjectOptions.deletingDirs(),
+            new S3ADataBlocks.BlockUploadData(new byte[SMALL_FILE_SIZE], null),
+            null);
 
-    // write object with random content length header
-    Map<String, String> metadata = new HashMap<>();
-    metadata.put(AWSHeaders.UNENCRYPTED_CONTENT_LENGTH, "10");
-    try (AuditSpan span = span()) {
-      RequestFactory factory = RequestFactoryImpl.builder()
-          .withBucket(fs.getBucket())
-          .build();
-      PutObjectRequest.Builder putObjectRequestBuilder =
-          factory.newPutObjectRequestBuilder(key, null, SMALL_FILE_SIZE,
-              false);
-      putObjectRequestBuilder.contentLength(Long.parseLong(String.valueOf(SMALL_FILE_SIZE)));
-      putObjectRequestBuilder.metadata(metadata);
-      fs.putObjectDirect(putObjectRequestBuilder.build(),
-          PutObjectOptions.deletingDirs(),
-          new S3ADataBlocks.BlockUploadData(new byte[SMALL_FILE_SIZE], null),
-          null);
-
-      // fetch the random content length
-      long contentLength = fs.getFileStatus(file).getLen();
-      assertEquals("content length does not match", 10, contentLength);
-    } finally {
-      fs.close();
+        // fetch the random content length
+        long contentLength = fs.getFileStatus(file).getLen();
+        assertEquals("content length does not match", 10, contentLength);
+      }
     }
   }
 
@@ -410,40 +361,32 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
   @Test
   public void testSizeOfUnencryptedObjectWithV1Compatibility() throws Exception {
     maybeSkipTest();
-    // initialize base s3 client.
     Configuration conf = new Configuration(getConfiguration());
-    S3AFileSystem fs = createTestFileSystem(conf);
-    removeBaseAndBucketOverrides(getTestBucketName(conf),
-        conf,
-        S3_ENCRYPTION_ALGORITHM,
-        S3_ENCRYPTION_KEY,
-        SERVER_SIDE_ENCRYPTION_ALGORITHM,
-        SERVER_SIDE_ENCRYPTION_KEY);
-    fs.initialize(getFileSystem().getUri(), conf);
+    conf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, false);
+    Path file = methodPath();
+    try (S3AFileSystem fs = createTestFileSystem(conf)) {
+      fs.initialize(getFileSystem().getUri(), conf);
 
-    Path file = path(getMethodName());
-    // Unencrypted data written to a path.
-    ContractTestUtils.writeDataset(fs, file, new byte[SMALL_FILE_SIZE],
-        SMALL_FILE_SIZE, SMALL_FILE_SIZE, true);
+      // Unencrypted data written to a path.
+      ContractTestUtils.writeDataset(fs, file, new byte[SMALL_FILE_SIZE], SMALL_FILE_SIZE,
+          SMALL_FILE_SIZE, true);
+
+      // check the file size
+      FileStatus status1 = fs.getFileStatus(file);
+      assertEquals("Mismatch in content length bytes", SMALL_FILE_SIZE, status1.getLen());
+    }
 
     // initialize encrypted s3 client with support for reading unencrypted objects
     Configuration cseConf = new Configuration(getConfiguration());
     cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
-    S3AFileSystem cseFs = createTestFileSystem(cseConf);
-    cseFs.initialize(getFileSystem().getUri(), cseConf);
 
-    // check the file size
-    try {
-      FileStatus status1 = fs.getFileStatus(file);
-      assertEquals("Mismatch in content length bytes", SMALL_FILE_SIZE,
-          status1.getLen());
+    try (S3AFileSystem cseFs = createTestFileSystem(cseConf)) {
+      cseFs.initialize(getFileSystem().getUri(), cseConf);
+
+      // check the file size
       FileStatus status2 = cseFs.getFileStatus(file);
       assertEquals("Mismatch in content length bytes", SMALL_FILE_SIZE,
           status2.getLen());
-    } finally {
-      // close the filesystem
-      fs.close();
-      cseFs.close();
     }
   }
 
@@ -457,22 +400,17 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
     maybeSkipTest();
     Configuration cseConf = new Configuration(getConfiguration());
     cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
-    S3AFileSystem fs = createTestFileSystem(cseConf);
-    fs.initialize(getFileSystem().getUri(), cseConf);
+    try (S3AFileSystem fs = createTestFileSystem(cseConf)) {
+      fs.initialize(getFileSystem().getUri(), cseConf);
 
-    // write encrypted file
-    Path file = path(getMethodName());
-    ContractTestUtils.writeDataset(fs, file, new byte[SMALL_FILE_SIZE],
-        SMALL_FILE_SIZE, SMALL_FILE_SIZE, true);
+      // write encrypted file
+      Path file = methodPath();
+      ContractTestUtils.writeDataset(fs, file, new byte[SMALL_FILE_SIZE], SMALL_FILE_SIZE,
+          SMALL_FILE_SIZE, true);
 
-    // check the file size
-    try {
       FileStatus status2 = fs.getFileStatus(file);
-      assertEquals("Mismatch in content length bytes", SMALL_FILE_SIZE,
-          status2.getLen());
-    } finally {
-      // close the filesystem
-      fs.close();
+      assertEquals("Mismatch in content length bytes",
+          SMALL_FILE_SIZE, status2.getLen());
     }
   }
 

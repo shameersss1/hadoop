@@ -21,8 +21,6 @@ package org.apache.hadoop.fs.s3a.impl;
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.s3a.Listing;
 import org.apache.hadoop.fs.s3a.S3AEncryptionMethods;
 import org.apache.hadoop.fs.s3a.S3AStore;
 import org.apache.hadoop.fs.s3a.S3ClientFactory;
@@ -52,34 +50,6 @@ public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
   }
 
   /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path         the path for which the listing is being performed
-   * @param includeSelf  a boolean indicating whether the path itself should
-   *                     be included in the listing
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  @Override
-  public Listing.FileStatusAcceptor getFileStatusAcceptor(Path path, boolean includeSelf) {
-    return includeSelf
-        ? Listing.ACCEPT_ALL_BUT_S3N
-        : new Listing.AcceptAllButSelfAndS3nDirs(path);
-  }
-
-  /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path the path for which the listing is being performed
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  @Override
-  public Listing.FileStatusAcceptor getFileStatusAcceptor(Path path) {
-    return new Listing.AcceptFilesOnly(path);
-  }
-
-  /**
    * Retrieves an object from the S3.
    *
    * @param store   The S3AStore object representing the S3 bucket.
@@ -89,7 +59,8 @@ public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
    * @throws IOException If an error occurs while retrieving the object.
    */
   @Override
-  public ResponseInputStream<GetObjectResponse> getObject(S3AStore store, GetObjectRequest request,
+  public ResponseInputStream<GetObjectResponse> getObject(S3AStore store,
+      GetObjectRequest request,
       RequestFactory factory) throws IOException {
     return store.getOrCreateS3Client().getObject(request);
   }
@@ -149,14 +120,12 @@ public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
    * @param key The key (path) of the object in the S3 bucket.
    * @param length The expected length of the object.
    * @param store The S3AStore object representing the S3 bucket.
-   * @param bucket The name of the S3 bucket.
-   * @param factory The RequestFactory used to create the HeadObjectRequest.
    * @param response The HeadObjectResponse containing the metadata of the object.
    * @return The size of the object in bytes.
    */
   @Override
-  public long getS3ObjectSize(String key, long length, S3AStore store, String bucket,
-      RequestFactory factory, HeadObjectResponse response) {
+  public long getS3ObjectSize(String key, long length, S3AStore store,
+      HeadObjectResponse response) throws IOException {
     return length;
   }
 

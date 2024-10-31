@@ -31,7 +31,7 @@ import static org.apache.hadoop.fs.s3a.S3ATestUtils.skipIfEncryptionNotSet;
 import static org.apache.hadoop.fs.s3a.S3ATestUtils.skipIfEncryptionTestsDisabled;
 
 /**
- * Tests to verify S3 client side encryption (CSE-CUSTOM).
+ * Tests to verify Custom S3 client side encryption CSE-CUSTOM.
  */
 public class ITestS3AClientSideEncryptionCustom extends ITestS3AClientSideEncryption {
 

@@ -26,8 +26,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.fs.s3a.Listing;
 import org.apache.hadoop.fs.s3a.S3AEncryptionMethods;
 import org.apache.hadoop.fs.s3a.S3AStore;
 import org.apache.hadoop.fs.s3a.S3ClientFactory;
@@ -35,29 +33,10 @@ import org.apache.hadoop.fs.s3a.api.RequestFactory;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
 
 /**
- * An interface that defines the contract for handling certain filesystem operations.
+ * An interface that helps map from object store semantics to that of the fileystem.
+ * This specially supports encrypted stores.
  */
 public interface S3AFileSystemHandler {
-
-  /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path         the path for which the listing is being performed
-   * @param includeSelf  a boolean indicating whether the path itself should
-   *                     be included in the listing
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  Listing.FileStatusAcceptor getFileStatusAcceptor(Path path, boolean includeSelf);
-
-  /**
-   * Returns a {@link Listing.FileStatusAcceptor} object.
-   * That determines which files and directories should be included in a listing operation.
-   *
-   * @param path         the path for which the listing is being performed
-   * @return a {@link Listing.FileStatusAcceptor} object
-   */
-  Listing.FileStatusAcceptor getFileStatusAcceptor(Path path);
 
   /**
    * Retrieves an object from the S3.
@@ -107,19 +86,17 @@ public interface S3AFileSystemHandler {
 
 
   /**
-   * Retrieves the size of a S3 object.
+   * Retrieves the unencrypted length of an object in the S3 bucket.
    *
    * @param key The key (path) of the object in the S3 bucket.
-   * @param length The expected length of the object, if known. If not known, pass -1.
+   * @param length The length of the object.
    * @param store The S3AStore object representing the S3 bucket.
-   * @param bucket The name of the S3 bucket.
-   * @param factory The RequestFactory used to create the HeadObjectRequest.
    * @param response The HeadObjectResponse containing the metadata of the object.
-   * @return The size of the object in bytes.
+   * @return The unencrypted size of the object in bytes.
    * @throws IOException If an error occurs while retrieving the object size.
    */
-  long getS3ObjectSize(String key, long length, S3AStore store, String bucket,
-      RequestFactory factory, HeadObjectResponse response) throws IOException;
+  long getS3ObjectSize(String key, long length, S3AStore store,
+      HeadObjectResponse response) throws IOException;
 
 }
 
