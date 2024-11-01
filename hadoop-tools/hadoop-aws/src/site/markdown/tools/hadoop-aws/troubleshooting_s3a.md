@@ -1066,7 +1066,7 @@ Reading an unencrypted file would fail when read through CSE enabled client by d
 software.amazon.encryption.s3.S3EncryptionClientException: Instruction file not found!
 Please ensure the object you are attempting to decrypt has been encrypted
 using the S3 Encryption Client.
-``` 
+```
 CSE enabled client should read encrypted data only.
 
 Fix: set `fs.s3a.encryption.cse.v1.compatibility.enabled=true`
