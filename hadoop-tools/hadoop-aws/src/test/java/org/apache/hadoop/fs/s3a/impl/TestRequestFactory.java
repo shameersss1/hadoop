@@ -270,7 +270,7 @@ public class TestRequestFactory extends AbstractHadoopTestBase {
 
     // multipart part
     final UploadPartRequest upload = factory.newUploadPartRequestBuilder(path,
-            "1", 3,  false,128_000_000)
+        "1", 3, false, 128_000_000)
         .build();
     assertApiTimeouts(partDuration, upload);
 

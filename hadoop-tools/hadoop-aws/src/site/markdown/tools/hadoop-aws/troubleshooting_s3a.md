@@ -1053,11 +1053,9 @@ file using configured SSE-C keyB into that structure.
 
 ### java.lang.NoClassDefFoundError: software/amazon/encryption/s3/S3EncryptionClient
 
-With the move to the V2 AWS SDK, CSE is implemented via 
-[amazon-s3-encryption-client-java](
-https://github.com/aws/amazon-s3-encryption-client-java/tree/v3.1.1) 
-which is not packaged in AWS SDK V2 bundle jar and needs to be added seperately
-
+With the move to the V2 AWS SDK, CSE is implemented via
+[amazon-s3-encryption-client-java](https://github.com/aws/amazon-s3-encryption-client-java/tree/v3.1.1)
+which is not packaged in AWS SDK V2 bundle jar and needs to be added separately.
 
 Fix: add amazon-s3-encryption-client-java jar version 3.1.1  to the class path.
 
@@ -1065,8 +1063,8 @@ Fix: add amazon-s3-encryption-client-java jar version 3.1.1  to the class path.
 
 Reading an unencrypted file would fail when read through CSE enabled client by default.
 ```
-software.amazon.encryption.s3.S3EncryptionClientException: Instruction file not found! 
-Please ensure the object you are attempting to decrypt has been encrypted 
+software.amazon.encryption.s3.S3EncryptionClientException: Instruction file not found!
+Please ensure the object you are attempting to decrypt has been encrypted
 using the S3 Encryption Client.
 ``` 
 CSE enabled client should read encrypted data only.
