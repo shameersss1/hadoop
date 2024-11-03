@@ -111,6 +111,17 @@ Configuration
 |:---- |:---- |
 | `yarn.resourcemanager.scheduler.class` | `org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler` |
 
+###Setting up scheduling stratergy
+
+  To configure different scheduling stratergy in capcity scheduler, set the following property in the **conf/capacity-scheduler.xml**:
+
+
+| Property                                                                                                         | Description                                                                                                                                                                                          |
+|:-----------------------------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `yarn.scheduler.capacity.schedule-asynchronously.enable`                                                         | Specifies whether to enable asynchronous scheduling. The default value is true.                                                                                                                      |
+| `yarn.scheduler.capacity.multi-node-placement-enabled`                                                           | Specifies whether to enable global scheduling. The default value is false. In addition to this, node sorting policy needs to be set using `yarn.scheduler.capacity.multi-node-sorting.policy.names`. |
+
+
 ###Setting up queues
 
   `etc/hadoop/capacity-scheduler.xml` is the configuration file for the `CapacityScheduler`.
