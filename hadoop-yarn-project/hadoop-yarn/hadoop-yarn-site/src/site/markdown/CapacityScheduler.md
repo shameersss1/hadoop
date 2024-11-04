@@ -111,9 +111,9 @@ Configuration
 |:---- |:---- |
 | `yarn.resourcemanager.scheduler.class` | `org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler` |
 
-###Setting up scheduling stratergy
+###Setting up scheduling strategy
 
-  To configure different scheduling stratergy in capcity scheduler, set the following property in the **conf/capacity-scheduler.xml**:
+  To configure different scheduling strategy in capacity scheduler, set the following property in the **conf/capacity-scheduler.xml**:
 
 
 | Property                                                                                                         | Description                                                                                                                                                                                          |
