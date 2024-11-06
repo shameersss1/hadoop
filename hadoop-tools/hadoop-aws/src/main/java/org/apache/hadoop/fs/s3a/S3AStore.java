@@ -49,7 +49,7 @@ import org.apache.hadoop.fs.s3a.api.RequestFactory;
 import org.apache.hadoop.fs.s3a.impl.ChangeTracker;
 import org.apache.hadoop.fs.s3a.impl.ClientManager;
 import org.apache.hadoop.fs.s3a.impl.MultiObjectDeleteException;
-import org.apache.hadoop.fs.s3a.impl.S3AFileSystemHandler;
+import org.apache.hadoop.fs.s3a.impl.S3AFileSystemOperations;
 import org.apache.hadoop.fs.s3a.impl.StoreContext;
 import org.apache.hadoop.fs.s3a.statistics.S3AStatisticsContext;
 import org.apache.hadoop.fs.statistics.DurationTrackerFactory;
@@ -213,7 +213,7 @@ public interface S3AStore extends IOStatisticsSource, ClientManager {
   HeadObjectResponse headObject(String key,
       ChangeTracker changeTracker,
       Invoker changeInvoker,
-      S3AFileSystemHandler fsHandler,
+      S3AFileSystemOperations fsHandler,
       String operation) throws IOException;
 
   /**

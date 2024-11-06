@@ -33,7 +33,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FutureDataInputStreamBuilder;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.contract.ContractTestUtils;
-import org.apache.hadoop.fs.s3a.AWSClientIOException;
 import org.apache.hadoop.fs.s3a.AbstractS3ATestBase;
 import org.apache.hadoop.fs.s3a.S3AFileSystem;
 import org.apache.hadoop.fs.s3a.api.PerformanceFlagEnum;
@@ -60,10 +59,8 @@ import static org.apache.hadoop.fs.s3a.Constants.PREFETCH_ENABLED_KEY;
 import static org.apache.hadoop.fs.s3a.Constants.REQUEST_TIMEOUT;
 import static org.apache.hadoop.fs.s3a.Constants.RETRY_LIMIT;
 import static org.apache.hadoop.fs.s3a.Constants.SOCKET_TIMEOUT;
-import static org.apache.hadoop.fs.s3a.S3ATestUtils.getTestBucketName;
 import static org.apache.hadoop.fs.s3a.S3ATestUtils.removeBaseAndBucketOverrides;
 import static org.apache.hadoop.fs.s3a.commit.CommitConstants.MAGIC_PATH_PREFIX;
-import static org.apache.hadoop.fs.s3a.S3AUtils.getEncryptionAlgorithm;
 import static org.apache.hadoop.fs.s3a.impl.ConfigurationHelper.setDurationAsMillis;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
@@ -148,6 +145,7 @@ public class ITestConnectionTimeouts extends AbstractS3ATestBase {
    */
   @Test
   public void testGeneratePoolTimeouts() throws Throwable {
+    skipIfClientSideEncryption();
     AWSClientConfig.setMinimumOperationDuration(Duration.ZERO);
     Configuration conf = timingOutConfiguration();
     Path path = methodPath();
@@ -159,12 +157,7 @@ public class ITestConnectionTimeouts extends AbstractS3ATestBase {
     ContractTestUtils.createFile(fs, path, true, DATASET);
     final FileStatus st = fs.getFileStatus(path);
     try (FileSystem brittleFS = FileSystem.newInstance(fs.getUri(), conf)) {
-      Class exceptionClass = ConnectTimeoutException.class;
-      if (CSEUtils.isCSEEnabled(getEncryptionAlgorithm(
-          getTestBucketName(conf), conf).getMethod())) {
-        exceptionClass = AWSClientIOException.class;
-      }
-      intercept(exceptionClass, () -> {
+      intercept(ConnectTimeoutException.class, () -> {
         for (int i = 0; i < streamsToCreate; i++) {
           FutureDataInputStreamBuilder b = brittleFS.openFile(path);
           b.withFileStatus(st);

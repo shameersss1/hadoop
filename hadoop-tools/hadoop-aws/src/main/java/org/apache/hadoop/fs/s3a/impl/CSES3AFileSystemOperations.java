@@ -20,6 +20,11 @@ package org.apache.hadoop.fs.s3a.impl;
 
 import java.io.IOException;
 
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.s3a.S3AEncryptionMethods;
 import org.apache.hadoop.fs.s3a.S3AStore;
@@ -28,29 +33,23 @@ import org.apache.hadoop.fs.s3a.api.RequestFactory;
 import org.apache.hadoop.fs.statistics.impl.IOStatisticsStore;
 import org.apache.hadoop.util.ReflectionUtils;
 
-import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-
-import static org.apache.hadoop.fs.s3a.Constants.DEFAULT_S3_CLIENT_FACTORY_IMPL;
-import static org.apache.hadoop.fs.s3a.Constants.S3_CLIENT_FACTORY_IMPL;
 import static org.apache.hadoop.fs.s3a.Statistic.CLIENT_SIDE_ENCRYPTION_ENABLED;
+import static org.apache.hadoop.fs.s3a.impl.InternalConstants.CSE_PADDING_LENGTH;
 
 /**
- * An implementation of the {@link S3AFileSystemHandler} interface.
- * This handles certain filesystem operations when s3 client side encryption is disabled.
+ * An implementation of the {@link S3AFileSystemOperations} interface.
+ * This handles certain filesystem operations when s3 client side encryption is enabled.
  */
-public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
+public class CSES3AFileSystemOperations implements S3AFileSystemOperations {
 
   /**
-   * Constructs a new instance of {@code BaseS3AFileSystemHandler}.
+   * Constructs a new instance of {@code CSES3AFileSystemOperations}.
    */
-  public BaseS3AFileSystemHandler() {
+  public CSES3AFileSystemOperations() {
   }
 
   /**
-   * Retrieves an object from the S3.
+   * Retrieves an object from the S3 using encrypted S3 client.
    *
    * @param store   The S3AStore object representing the S3 bucket.
    * @param request The GetObjectRequest containing the details of the object to retrieve.
@@ -66,26 +65,27 @@ public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
   }
 
   /**
-   * Set the client side encryption gauge to 0.
+   * Set the client side encryption gauge 1.
    * @param ioStatisticsStore The IOStatisticsStore of the filesystem.
    */
   @Override
   public void setCSEGauge(IOStatisticsStore ioStatisticsStore) {
-    ioStatisticsStore.setGauge(CLIENT_SIDE_ENCRYPTION_ENABLED.getSymbol(), 0L);
+    ioStatisticsStore.setGauge(CLIENT_SIDE_ENCRYPTION_ENABLED.getSymbol(), 1L);
   }
 
   /**
-   * Retrieves the client-side encryption materials for the given bucket and encryption algorithm.
+   * Retrieves the cse materials.
    *
    * @param conf      The Hadoop configuration object.
    * @param bucket    The name of the S3 bucket.
    * @param algorithm The client-side encryption algorithm to use.
-   * @return null.
+   * @return The client-side encryption materials.
+   * @throws IOException If an error occurs while retrieving the encryption materials.
    */
   @Override
   public CSEMaterials getClientSideEncryptionMaterials(Configuration conf, String bucket,
-      S3AEncryptionMethods algorithm) {
-    return null;
+      S3AEncryptionMethods algorithm) throws IOException {
+    return CSEUtils.getClientSideEncryptionMaterials(conf, bucket, algorithm);
   }
 
   /**
@@ -96,17 +96,14 @@ public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
    */
   @Override
   public S3ClientFactory getS3ClientFactory(Configuration conf) {
-    Class<? extends S3ClientFactory> s3ClientFactoryClass = conf.getClass(
-        S3_CLIENT_FACTORY_IMPL, DEFAULT_S3_CLIENT_FACTORY_IMPL,
-        S3ClientFactory.class);
-    return ReflectionUtils.newInstance(s3ClientFactoryClass, conf);
+    return ReflectionUtils.newInstance(EncryptionS3ClientFactory.class, conf);
   }
 
   /**
    * Retrieves the S3 client factory for the specified class and configuration.
    *
    * @param conf  The Hadoop configuration object.
-   * @return null.
+   * @return null
    */
   @Override
   public S3ClientFactory getUnencryptedS3ClientFactory(Configuration conf) {
@@ -115,18 +112,24 @@ public class BaseS3AFileSystemHandler implements S3AFileSystemHandler {
 
 
   /**
-   * Return the size of S3 object.
+   * Retrieves the unencrypted length of an object in the S3 bucket.
    *
    * @param key The key (path) of the object in the S3 bucket.
-   * @param length The expected length of the object.
+   * @param length The length of the object.
    * @param store The S3AStore object representing the S3 bucket.
    * @param response The HeadObjectResponse containing the metadata of the object.
-   * @return The size of the object in bytes.
+   * @return The unencrypted size of the object in bytes.
+   * @throws IOException If an error occurs while retrieving the object size.
    */
   @Override
   public long getS3ObjectSize(String key, long length, S3AStore store,
       HeadObjectResponse response) throws IOException {
+    long unencryptedLength = length - CSE_PADDING_LENGTH;
+    if (unencryptedLength >= 0) {
+      return unencryptedLength;
+    }
     return length;
   }
+
 
 }

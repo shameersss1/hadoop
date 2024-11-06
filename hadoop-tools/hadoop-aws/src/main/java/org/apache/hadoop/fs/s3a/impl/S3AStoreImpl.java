@@ -571,10 +571,10 @@ public class S3AStoreImpl implements S3AStore {
   public HeadObjectResponse headObject(String key,
       ChangeTracker changeTracker,
       Invoker changeInvoker,
-      S3AFileSystemHandler fsHandler,
+      S3AFileSystemOperations fsHandler,
       String operation) throws IOException {
     HeadObjectResponse response = getStoreContext().getInvoker()
-        .retryUntranslated("GET " + key, true,
+        .retryUntranslated("HEAD " + key, true,
             () -> {
               HeadObjectRequest.Builder requestBuilder =
                   getRequestFactory().newHeadObjectRequestBuilder(key);

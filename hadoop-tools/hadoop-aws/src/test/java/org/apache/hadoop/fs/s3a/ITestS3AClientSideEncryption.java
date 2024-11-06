@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.fs.s3a;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,6 +34,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.RemoteIterator;
@@ -61,6 +63,7 @@ import static org.apache.hadoop.fs.s3a.S3ATestUtils.createTestFileSystem;
 import static org.apache.hadoop.fs.s3a.S3ATestUtils.getTestBucketName;
 import static org.apache.hadoop.fs.s3a.S3ATestUtils.getTestPropertyBool;
 import static org.apache.hadoop.fs.s3a.S3ATestUtils.removeBaseAndBucketOverrides;
+import static org.apache.hadoop.fs.s3a.S3ATestUtils.unsetAllEncryptionPropertiesForBucket;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
@@ -242,8 +245,8 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
 
     // CSE enabled FS trying to read unencrypted data would face an exception.
     try (FSDataInputStream in = cseEnabledFS.open(unEncryptedFilePath)) {
-      intercept(AWSClientIOException.class, "Instruction file not found!",
-          "AWSClientIOException should be thrown",
+      intercept(FileNotFoundException.class, "Instruction file not found!",
+          "FileNotFoundException should be thrown",
           () -> {
             in.read(new byte[SMALL_FILE_SIZE]);
             return "Exception should be raised if unencrypted data is read by "
@@ -273,20 +276,13 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
 
   /**
    * Test to check if unencrypted objects are read with V1 client compatibility.
-   * @throws IOException
-   * @throws Exception
    */
   @Test
   public void testUnencryptedObjectReadWithV1CompatibilityConfig() throws Exception {
     maybeSkipTest();
     // initialize base s3 client.
     Configuration conf = new Configuration(getConfiguration());
-    removeBaseAndBucketOverrides(getTestBucketName(conf),
-        conf,
-        S3_ENCRYPTION_ALGORITHM,
-        S3_ENCRYPTION_KEY,
-        SERVER_SIDE_ENCRYPTION_ALGORITHM,
-        SERVER_SIDE_ENCRYPTION_KEY);
+    unsetAllEncryptionPropertiesForBucket(conf);
 
     Path file = methodPath();
 
@@ -314,13 +310,12 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
 
   /**
    * Tests the size of an encrypted object when with V1 compatibility and custom header length.
-   *
-   * @throws Exception If any error occurs during the test execution.
    */
   @Test
   public void testSizeOfEncryptedObjectFromHeaderWithV1Compatibility() throws Exception {
     maybeSkipTest();
     Configuration cseConf = new Configuration(getConfiguration());
+    unsetAllEncryptionPropertiesForBucket(cseConf);
     cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
     try (S3AFileSystem fs = createTestFileSystem(cseConf)) {
       fs.initialize(getFileSystem().getUri(), cseConf);
@@ -346,22 +341,20 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
             new S3ADataBlocks.BlockUploadData(new byte[SMALL_FILE_SIZE], null),
             null);
 
-        // fetch the random content length
-        long contentLength = fs.getFileStatus(file).getLen();
-        assertEquals("content length does not match", 10, contentLength);
+        // check if fetched file length matches with the header.
+        assertFileLength(fs, file, 10);
       }
     }
   }
 
   /**
    * Tests the size of an unencrypted object when using V1 compatibility mode.
-   *
-   * @throws Exception If any error occurs during the test execution.
    */
   @Test
   public void testSizeOfUnencryptedObjectWithV1Compatibility() throws Exception {
     maybeSkipTest();
     Configuration conf = new Configuration(getConfiguration());
+    unsetAllEncryptionPropertiesForBucket(conf);
     conf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, false);
     Path file = methodPath();
     try (S3AFileSystem fs = createTestFileSystem(conf)) {
@@ -372,8 +365,7 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
           SMALL_FILE_SIZE, true);
 
       // check the file size
-      FileStatus status1 = fs.getFileStatus(file);
-      assertEquals("Mismatch in content length bytes", SMALL_FILE_SIZE, status1.getLen());
+      assertFileLength(fs, file, SMALL_FILE_SIZE);
     }
 
     // initialize encrypted s3 client with support for reading unencrypted objects
@@ -382,23 +374,19 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
 
     try (S3AFileSystem cseFs = createTestFileSystem(cseConf)) {
       cseFs.initialize(getFileSystem().getUri(), cseConf);
-
       // check the file size
-      FileStatus status2 = cseFs.getFileStatus(file);
-      assertEquals("Mismatch in content length bytes", SMALL_FILE_SIZE,
-          status2.getLen());
+      assertFileLength(cseFs, file, SMALL_FILE_SIZE);
     }
   }
 
   /**
    * Tests the size of an encrypted object when using V1 compatibility mode.
-   *
-   * @throws Exception If any error occurs during the test execution.
    */
   @Test
   public void testSizeOfEncryptedObjectWithV1Compatibility() throws Exception {
     maybeSkipTest();
     Configuration cseConf = new Configuration(getConfiguration());
+    unsetAllEncryptionPropertiesForBucket(cseConf);
     cseConf.setBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED, true);
     try (S3AFileSystem fs = createTestFileSystem(cseConf)) {
       fs.initialize(getFileSystem().getUri(), cseConf);
@@ -407,10 +395,8 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
       Path file = methodPath();
       ContractTestUtils.writeDataset(fs, file, new byte[SMALL_FILE_SIZE], SMALL_FILE_SIZE,
           SMALL_FILE_SIZE, true);
-
-      FileStatus status2 = fs.getFileStatus(file);
-      assertEquals("Mismatch in content length bytes",
-          SMALL_FILE_SIZE, status2.getLen());
+      // check the file size
+      assertFileLength(fs, file, SMALL_FILE_SIZE);
     }
   }
 
@@ -441,6 +427,24 @@ public abstract class ITestS3AClientSideEncryption extends AbstractS3ATestBase {
     Path path = writeThenReadFile(getMethodName() + len, len);
     assertEncrypted(path);
     rm(getFileSystem(), path, false, false);
+  }
+
+  /**
+   * Asserts that the length of a file in the given FileSystem matches the expected value.
+   *
+   * <p>This method retrieves the FileStatus of the specified file and compares its length
+   * to the expected value. It uses AssertJ for the assertion, which provides a detailed
+   * error message if the assertion fails.
+   *
+   * @param fs The FileSystem instance containing the file to be checked.
+   * @param path The Path to the file whose length is to be verified.
+   * @param expected The expected length of the file in bytes.
+   */
+  private void assertFileLength(FileSystem fs, Path path, long expected) throws IOException {
+    FileStatus fileStatus = fs.getFileStatus(path);
+    Assertions.assertThat(fileStatus.getLen())
+        .describedAs("Length of %s status: %s", path, fileStatus)
+        .isEqualTo(expected);
   }
 
   /**

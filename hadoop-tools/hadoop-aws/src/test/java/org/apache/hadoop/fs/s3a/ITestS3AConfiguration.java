@@ -646,15 +646,4 @@ public class ITestS3AConfiguration {
       skip("Skipping test as cross region client is in use ");
     }
   }
-
-  /**
-   * Unset  encryption options.
-   * This is needed to avoid encryption tests interfering with non-encryption
-   * tests.
-   * @param conf Configuations
-   */
-  private static void unsetEncryption(Configuration conf) {
-    removeBaseAndBucketOverrides(conf, S3_ENCRYPTION_ALGORITHM);
-    conf.set(Constants.S3_ENCRYPTION_ALGORITHM, S3AEncryptionMethods.NONE.getMethod());
-  }
 }

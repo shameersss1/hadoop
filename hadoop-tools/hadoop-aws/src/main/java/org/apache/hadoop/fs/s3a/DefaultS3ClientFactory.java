@@ -165,7 +165,7 @@ public class DefaultS3ClientFactory extends Configured
             configureClientBuilder(S3AsyncClient.builder(), parameters, conf, bucket)
                 .httpClientBuilder(httpClientBuilder);
 
-    // TODO: Enable multi part upload with cse once it is available.
+    // multipart upload pending with HADOOP-19326.
     if (!parameters.isClientSideEncryptionEnabled()) {
       s3AsyncClientBuilder.multipartConfiguration(multipartConfiguration)
               .multipartEnabled(parameters.isMultipartCopy());

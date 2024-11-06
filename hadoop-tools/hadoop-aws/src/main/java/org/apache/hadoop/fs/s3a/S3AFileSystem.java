@@ -115,9 +115,10 @@ import org.apache.hadoop.fs.s3a.auth.delegation.DelegationOperations;
 import org.apache.hadoop.fs.s3a.auth.delegation.DelegationTokenProvider;
 import org.apache.hadoop.fs.s3a.commit.magic.InMemoryMagicCommitTracker;
 import org.apache.hadoop.fs.s3a.impl.AWSCannedACL;
-import org.apache.hadoop.fs.s3a.impl.BaseS3AFileSystemHandler;
+import org.apache.hadoop.fs.s3a.impl.BaseS3AFileSystemOperations;
 import org.apache.hadoop.fs.s3a.impl.BulkDeleteOperation;
 import org.apache.hadoop.fs.s3a.impl.BulkDeleteOperationCallbacksImpl;
+import org.apache.hadoop.fs.s3a.impl.CSES3AFileSystemOperations;
 import org.apache.hadoop.fs.s3a.impl.ChangeDetectionPolicy;
 import org.apache.hadoop.fs.s3a.impl.ClientManager;
 import org.apache.hadoop.fs.s3a.impl.ClientManagerImpl;
@@ -125,9 +126,8 @@ import org.apache.hadoop.fs.s3a.impl.ConfigurationHelper;
 import org.apache.hadoop.fs.s3a.impl.ContextAccessors;
 import org.apache.hadoop.fs.s3a.impl.CopyFromLocalOperation;
 import org.apache.hadoop.fs.s3a.impl.CreateFileBuilder;
-import org.apache.hadoop.fs.s3a.impl.S3AFileSystemHandler;
-import org.apache.hadoop.fs.s3a.impl.CSES3AFileSystemHandler;
-import org.apache.hadoop.fs.s3a.impl.CSEV1CompatibleS3AFileSystemHandler;
+import org.apache.hadoop.fs.s3a.impl.S3AFileSystemOperations;
+import org.apache.hadoop.fs.s3a.impl.CSEV1CompatibleS3AFileSystemOperations;
 import org.apache.hadoop.fs.s3a.impl.CSEMaterials;
 import org.apache.hadoop.fs.s3a.impl.DeleteOperation;
 import org.apache.hadoop.fs.s3a.impl.DirectoryPolicy;
@@ -468,7 +468,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
   /**
    * Handler for certain filesystem operations.
    */
-  private S3AFileSystemHandler fsHandler;
+  private S3AFileSystemOperations fsHandler;
 
 
   /**
@@ -830,21 +830,21 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
   }
 
   /**
-   * Creates and returns an instance of the appropriate S3AFileSystemHandler.
+   * Creates and returns an instance of the appropriate S3AFileSystemOperations.
    * Creation is baaed on the client-side encryption (CSE) settings.
    *
-   * @return An instance of the appropriate S3AFileSystemHandler implementation.
+   * @return An instance of the appropriate S3AFileSystemOperations implementation.
    */
-  private S3AFileSystemHandler createFileSystemHandler() {
+  private S3AFileSystemOperations createFileSystemHandler() {
     if (isCSEEnabled) {
       if (getConf().getBoolean(S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED,
           S3_ENCRYPTION_CSE_V1_COMPATIBILITY_ENABLED_DEFAULT)) {
-        return new CSEV1CompatibleS3AFileSystemHandler();
+        return new CSEV1CompatibleS3AFileSystemOperations();
       } else {
-        return new CSES3AFileSystemHandler();
+        return new CSES3AFileSystemOperations();
       }
     } else {
-      return new BaseS3AFileSystemHandler();
+      return new BaseS3AFileSystemOperations();
     }
   }
 

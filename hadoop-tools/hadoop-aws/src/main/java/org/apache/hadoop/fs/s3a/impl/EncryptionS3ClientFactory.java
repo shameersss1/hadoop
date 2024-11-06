@@ -21,12 +21,6 @@ package org.apache.hadoop.fs.s3a.impl;
 import java.io.IOException;
 import java.net.URI;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.s3a.DefaultS3ClientFactory;
-import org.apache.hadoop.util.Preconditions;
-import org.apache.hadoop.util.ReflectionUtils;
-import org.apache.hadoop.util.functional.LazyAtomicReference;
-
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.KmsClientBuilder;
@@ -38,6 +32,12 @@ import software.amazon.encryption.s3.materials.CryptographicMaterialsManager;
 import software.amazon.encryption.s3.materials.DefaultCryptoMaterialsManager;
 import software.amazon.encryption.s3.materials.Keyring;
 import software.amazon.encryption.s3.materials.KmsKeyring;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.s3a.DefaultS3ClientFactory;
+import org.apache.hadoop.util.Preconditions;
+import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hadoop.util.functional.LazyAtomicReference;
 
 import static org.apache.hadoop.fs.s3a.impl.InstantiationIOException.unavailable;
 
@@ -141,8 +141,10 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
    *
    * @param parameters The S3ClientCreationParameters containing the necessary configuration.
    * @return An instance of S3EncryptionClient.
+   * @throws IOException If an error occurs during the creation of the S3EncryptionClient.
    */
-  private S3Client createS3EncryptionClient(S3ClientCreationParameters parameters) {
+  private S3Client createS3EncryptionClient(S3ClientCreationParameters parameters)
+      throws IOException {
     CSEMaterials cseMaterials = parameters.getClientSideEncryptionMaterials();
     Preconditions.checkArgument(s3AsyncClient != null,
         "S3 async client not initialized");
@@ -170,8 +172,13 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
       s3EncryptionClientBuilder.cryptoMaterialsManager(kmsCryptoMaterialsManager);
       break;
     case CUSTOM:
-      Keyring keyring = getKeyringProvider(cseMaterials.getCustomKeyringClassName(),
-          cseMaterials.getConf());
+      Keyring keyring;
+      try {
+        keyring =
+            getKeyringProvider(cseMaterials.getCustomKeyringClassName(), cseMaterials.getConf());
+      } catch (RuntimeException e) {
+        throw new IOException("Failed to instantiate a custom keyring provider", e);
+      }
       CryptographicMaterialsManager customCryptoMaterialsManager =
           DefaultCryptoMaterialsManager.builder()
               .keyring(keyring)
@@ -220,8 +227,10 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
    *
    * @param parameters The S3ClientCreationParameters containing the necessary configuration.
    * @return An instance of S3AsyncEncryptionClient.
+   * @throws IOException If an error occurs during the creation of the S3AsyncEncryptionClient.
    */
-  private S3AsyncClient createS3AsyncEncryptionClient(S3ClientCreationParameters parameters) {
+  private S3AsyncClient createS3AsyncEncryptionClient(S3ClientCreationParameters parameters)
+      throws IOException {
     Preconditions.checkArgument(s3AsyncClient != null,
         "S3 async client not initialized");
     Preconditions.checkArgument(parameters != null,
@@ -246,8 +255,13 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
       s3EncryptionAsyncClientBuilder.cryptoMaterialsManager(kmsCryptoMaterialsManager);
       break;
     case CUSTOM:
-      Keyring keyring = getKeyringProvider(cseMaterials.getCustomKeyringClassName(),
-          cseMaterials.getConf());
+      Keyring keyring;
+      try {
+        keyring =
+            getKeyringProvider(cseMaterials.getCustomKeyringClassName(), cseMaterials.getConf());
+      } catch (RuntimeException e) {
+        throw new IOException("Failed to instantiate a custom keyring provider", e);
+      }
       CryptographicMaterialsManager customCryptoMaterialsManager =
           DefaultCryptoMaterialsManager.builder()
               .keyring(keyring)
@@ -260,21 +274,32 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
     return s3EncryptionAsyncClientBuilder.build();
   }
 
-
   /**
-   * Retrieves an instance of the Keyring provider based on the provided class name.
+   * Creates and returns a Keyring provider instance based on the given class name.
    *
-   * @param className The fully qualified class name of the Keyring provider implementation.
-   * @param conf The Configuration object containing the necessary configuration properties.
-   * @return An instance of the Keyring provider.
+   * <p>This method attempts to instantiate a Keyring provider using reflection. It first tries
+   * to create an instance using the standard ReflectionUtils.newInstance method. If that fails,
+   * it falls back to an alternative instantiation method, which is primarily used for testing
+   * purposes (specifically for CustomKeyring.java).
+   *
+   * @param className The fully qualified class name of the Keyring provider to instantiate.
+   * @param conf The Configuration object to be passed to the Keyring provider constructor.
+   * @return An instance of the specified Keyring provider.
+   * @throws RuntimeException If unable to create the Keyring provider instance.
    */
-  private Keyring getKeyringProvider(String className, Configuration conf) {
+  private Keyring getKeyringProvider(String className, Configuration conf)  {
+    Class<? extends Keyring> keyringProviderClass = getCustomKeyringProviderClass(className);
     try {
-      return ReflectionUtils.newInstance(getCustomKeyringProviderClass(className), conf);
+      return ReflectionUtils.newInstance(keyringProviderClass, conf);
     } catch (Exception e) {
-      // this is for testing purpose to support CustomKeyring.java
-      return ReflectionUtils.newInstance(getCustomKeyringProviderClass(className), conf,
-          new Class[] {Configuration.class}, conf);
+      LOG.warn("Failed to create Keyring provider", e);
+      // This is for testing purposes to support CustomKeyring.java
+      try {
+        return ReflectionUtils.newInstance(keyringProviderClass, conf,
+            new Class[] {Configuration.class}, conf);
+      } catch (Exception ex) {
+        throw new RuntimeException("Failed to create Keyring provider", ex);
+      }
     }
   }
 
