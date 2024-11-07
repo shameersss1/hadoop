@@ -40,7 +40,7 @@ import org.apache.hadoop.fs.s3a.auth.NoAwsCredentialsException;
 import org.apache.hadoop.test.AbstractHadoopTestBase;
 
 import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.maybeExtractIOException;
-import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.maybeExtractSdkExceptionFromEncryptionClientException;
+import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.maybeProcessEncryptionClientException;
 import static org.apache.hadoop.test.LambdaTestUtils.intercept;
 
 /**
@@ -134,7 +134,7 @@ public class TestErrorTranslation extends AbstractHadoopTestBase {
   @Test
   public void testEncryptionClientExceptionExtraction() throws Throwable {
     intercept(NoSuchKeyException.class, () -> {
-      throw maybeExtractSdkExceptionFromEncryptionClientException(
+      throw maybeProcessEncryptionClientException(
           new S3EncryptionClientException("top",
               new S3EncryptionClientException("middle", NoSuchKeyException.builder().build())));
     });
@@ -143,7 +143,7 @@ public class TestErrorTranslation extends AbstractHadoopTestBase {
   @Test
   public void testNonEncryptionClientExceptionExtraction() throws Throwable {
     intercept(SdkException.class, () -> {
-      throw maybeExtractSdkExceptionFromEncryptionClientException(
+      throw maybeProcessEncryptionClientException(
           sdkException("top", sdkException("middle", NoSuchKeyException.builder().build())));
     });
   }
@@ -151,7 +151,7 @@ public class TestErrorTranslation extends AbstractHadoopTestBase {
   @Test
   public void testEncryptionClientExceptionExtractionWithRTE() throws Throwable {
     intercept(S3EncryptionClientException.class, () -> {
-      throw maybeExtractSdkExceptionFromEncryptionClientException(
+      throw maybeProcessEncryptionClientException(
           new S3EncryptionClientException("top", new UnsupportedOperationException()));
     });
   }

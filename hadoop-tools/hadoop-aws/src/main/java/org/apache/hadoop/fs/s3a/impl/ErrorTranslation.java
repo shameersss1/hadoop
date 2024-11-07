@@ -135,7 +135,7 @@ public final class ErrorTranslation {
    * @see SdkException
    * @see AwsServiceException
    */
-  public static SdkException maybeExtractSdkExceptionFromEncryptionClientException(
+  public static SdkException maybeProcessEncryptionClientException(
       SdkException exception) {
     if (exception == null) {
       return null;

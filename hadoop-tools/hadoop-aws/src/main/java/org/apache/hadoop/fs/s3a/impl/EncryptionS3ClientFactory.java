@@ -177,7 +177,7 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
         keyring =
             getKeyringProvider(cseMaterials.getCustomKeyringClassName(), cseMaterials.getConf());
       } catch (RuntimeException e) {
-        throw new IOException("Failed to instantiate a custom keyring provider", e);
+        throw new IOException("Failed to instantiate a custom keyring provider: " + e, e);
       }
       CryptographicMaterialsManager customCryptoMaterialsManager =
           DefaultCryptoMaterialsManager.builder()
@@ -260,7 +260,7 @@ public class EncryptionS3ClientFactory extends DefaultS3ClientFactory {
         keyring =
             getKeyringProvider(cseMaterials.getCustomKeyringClassName(), cseMaterials.getConf());
       } catch (RuntimeException e) {
-        throw new IOException("Failed to instantiate a custom keyring provider", e);
+        throw new IOException("Failed to instantiate a custom keyring provider: " + e, e);
       }
       CryptographicMaterialsManager customCryptoMaterialsManager =
           DefaultCryptoMaterialsManager.builder()

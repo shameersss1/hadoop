@@ -80,7 +80,7 @@ import static org.apache.hadoop.fs.s3a.AWSCredentialProviderList.maybeTranslateC
 import static org.apache.hadoop.fs.s3a.Constants.*;
 import static org.apache.hadoop.fs.s3a.audit.AuditIntegration.maybeTranslateAuditException;
 import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.isUnknownBucket;
-import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.maybeExtractSdkExceptionFromEncryptionClientException;
+import static org.apache.hadoop.fs.s3a.impl.ErrorTranslation.maybeProcessEncryptionClientException;
 import static org.apache.hadoop.fs.s3a.impl.InstantiationIOException.instantiationException;
 import static org.apache.hadoop.fs.s3a.impl.InstantiationIOException.isAbstract;
 import static org.apache.hadoop.fs.s3a.impl.InstantiationIOException.isNotInstanceOf;
@@ -185,7 +185,7 @@ public final class S3AUtils {
       path = "/";
     }
 
-    exception = maybeExtractSdkExceptionFromEncryptionClientException(exception);
+    exception = maybeProcessEncryptionClientException(exception);
 
     if (!(exception instanceof AwsServiceException)) {
       // exceptions raised client-side: connectivity, auth, network problems...
