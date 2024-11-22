@@ -994,3 +994,31 @@ The user trying to use the KMS Key ID should have the right permissions to acces
 If not, then add permission(or IAM role) in "Key users" section by selecting the
 AWS-KMS CMK Key on AWS console.
 
+#### `S3EncryptionClientException` "Encountered fatal error in publisher"
+
+
+```
+software.amazon.encryption.s3.S3EncryptionClientException:
+  Unable to execute HTTP request: Encountered fatal error in publisher:
+  Unable to execute HTTP request: Encountered fatal error in publisher
+
+  ...
+  
+Caused by: java.lang.IllegalStateException: Must use either different key or iv for GCM encryption
+        at com.sun.crypto.provider.CipherCore.checkReinit(CipherCore.java:1088)
+        at com.sun.crypto.provider.CipherCore.update(CipherCore.java:662)
+        at com.sun.crypto.provider.AESCipher.engineUpdate(AESCipher.java:380)
+        at javax.crypto.Cipher.update(Cipher.java:1835)
+        at software.amazon.encryption.s3.internal.CipherSubscriber.onNext(CipherSubscriber.java:52)
+        at software.amazon.encryption.s3.internal.CipherSubscriber.onNext(CipherSubscriber.java:16)
+        at software.amazon.awssdk.utils.async.SimplePublisher.doProcessQueue(SimplePublisher.java:267)
+        at software.amazon.awssdk.utils.async.SimplePublisher.processEventQueue(SimplePublisher.java:224)
+```
+An upload of a single block of a large file/stream failed due to a transient failure of an S3 front end server.
+
+For unencrypted uploads, this block is simply posted again; recovery is transparent.
+However, the cipher used used in CSE-KMS is unable to recover.
+
+There is no fix for this other than the application itself completely regenerating the entire file/upload
+
+Please note that this is a very rare problem for applications running within AWS infrastructure.
