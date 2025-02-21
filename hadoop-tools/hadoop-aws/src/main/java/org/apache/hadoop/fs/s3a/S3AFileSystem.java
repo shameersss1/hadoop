@@ -2605,8 +2605,8 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
           path,
           true,
           includeSelf
-              ? Listing.ACCEPT_ALL_BUT_S3N
-              : new Listing.AcceptAllButSelfAndS3nDirs(path),
+              ? Listing.ACCEPT_ALL_OBJECTS
+              : new Listing.AcceptAllButSelf(path),
           status
       );
     }
